@@ -4,16 +4,16 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const passwordStore = require('./password-store');
 
 // ── 配置 ──
 const PORT = 3100;
-const PASSWORD = process.env.FILE_PASSWORD || '123456';
 const UPLOAD_DIR = path.resolve(__dirname, '../uploads');
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
 
-// 确保 uploads 目录存在
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+passwordStore.init();
 
 // ── Express ──
 const app = express();
@@ -23,21 +23,18 @@ app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24h
+  cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-// 表单解析
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
 // ── 文件名编码修复 ──
-// multer/busboy 常把 UTF-8 文件名字节当 Latin-1 解码
-// 比如 "æ" 其实是 "朝" 的 UTF-8 字节被误解释
 function fixEncoding(name) {
-  // 反向转换：Latin-1 字符串 → 原始字节 → 重新解释为 UTF-8
   return Buffer.from(name, 'latin1').toString('utf8');
 }
 
-// ── Multer 配置 ──
+// ── Multer ──
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
@@ -52,15 +49,12 @@ const storage = multer.diskStorage({
     }
   }
 });
-const upload = multer({
-  storage,
-  limits: { fileSize: MAX_FILE_SIZE }
-});
+const upload = multer({ storage, limits: { fileSize: MAX_FILE_SIZE } });
 
 // ── 中间件：登录检查 ──
 function requireAuth(req, res, next) {
   if (req.session.loggedIn) return next();
-  if (req.path === '/login' || req.method === 'POST' && req.path === '/login') return next();
+  if (req.path === '/login' || req.path === '/change-password' && req.method === 'POST') return next();
   res.redirect('/login');
 }
 app.use(requireAuth);
@@ -74,8 +68,11 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', (req, res) => {
-  if (req.body.password === PASSWORD) {
+  if (passwordStore.verify(req.body.password)) {
     req.session.loggedIn = true;
+    if (passwordStore.isDefault()) {
+      return res.redirect('/change-password?first=1');
+    }
     res.redirect('/');
   } else {
     res.redirect('/login?error=1');
@@ -87,7 +84,7 @@ app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
-// 首页 - 文件列表 + 上传
+// 首页
 app.get('/', (req, res) => {
   let files = [];
   try {
@@ -95,48 +92,51 @@ app.get('/', (req, res) => {
       .filter(f => f !== '.gitkeep')
       .map(f => {
         const stat = fs.statSync(path.join(UPLOAD_DIR, f));
-        return {
-          name: f,
-          size: stat.size,
-          mtime: stat.mtime,
-          isFile: stat.isFile()
-        };
+        return { name: f, size: stat.size, mtime: stat.mtime, isFile: stat.isFile() };
       })
       .filter(f => f.isFile)
       .sort((a, b) => b.mtime - a.mtime)
-      .map(f => ({
-        ...f,
-        sizeStr: formatSize(f.size),
-        mtimeStr: formatTime(f.mtime)
-      }));
+      .map(f => ({ ...f, sizeStr: formatSize(f.size), mtimeStr: formatTime(f.mtime) }));
   } catch (e) { /* ignore */ }
   res.send(renderIndex(files, req.query.msg));
 });
 
-// 上传 — 支持 AJAX (JSON) 和表单回退
+// 修改密码
+app.get('/change-password', (req, res) => {
+  if (!req.session.loggedIn) return res.redirect('/login');
+  res.send(renderChangePassword(req.query.first !== undefined, req.query.msg, req.query.error));
+});
+
+app.post('/change-password', (req, res) => {
+  if (!req.session.loggedIn) return res.redirect('/login');
+  const result = passwordStore.change(req.body.oldPassword, req.body.newPassword);
+  if (result.ok) {
+    if (!req.session.passwordChanged) req.session.passwordChanged = true;
+    return res.redirect('/?msg=Password changed successfully');
+  }
+  res.redirect('/change-password?error=' + encodeURIComponent(result.msg));
+});
+
+// 上传
 app.post('/upload', (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err) {
       if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
-          if (req.xhr || req.headers.accept?.includes('json')) {
-            return res.json({ ok: false, msg: 'File too large, max 500MB' });
-          }
-          return res.redirect('/?msg=File too large, max 500MB');
+          const msg = 'File too large, max 500MB';
+          if (req.xhr || req.headers.accept?.includes('json')) return res.json({ ok: false, msg });
+          return res.redirect('/?msg=' + encodeURIComponent(msg));
         }
         const msg = 'Upload error: ' + err.message;
-        if (req.xhr || req.headers.accept?.includes('json')) {
-          return res.json({ ok: false, msg });
-        }
+        if (req.xhr || req.headers.accept?.includes('json')) return res.json({ ok: false, msg });
         return res.redirect('/?msg=' + encodeURIComponent(msg));
       }
       return next(err);
     }
     if (!req.file) {
-      if (req.xhr || req.headers.accept?.includes('json')) {
-        return res.json({ ok: false, msg: 'Please select a file' });
-      }
-      return res.redirect('/?msg=Please select a file');
+      const msg = 'Please select a file';
+      if (req.xhr || req.headers.accept?.includes('json')) return res.json({ ok: false, msg });
+      return res.redirect('/?msg=' + encodeURIComponent(msg));
     }
     if (req.xhr || req.headers.accept?.includes('json')) {
       return res.json({ ok: true, msg: 'Upload successful', name: req.file.originalname });
@@ -145,11 +145,10 @@ app.post('/upload', (req, res, next) => {
   });
 });
 
-// 删除文件
+// 删除
 app.post('/delete/:name', (req, res) => {
   const name = decodeURIComponent(req.params.name);
   const fp = path.join(UPLOAD_DIR, name);
-  // 防止目录穿越
   if (!fp.startsWith(UPLOAD_DIR)) return res.status(403).end();
   try {
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
@@ -172,8 +171,7 @@ app.get('/d/:name', (req, res) => {
 
 function renderLogin(error) {
   return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>File Sharing · Login</title>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>File Sharing · Login</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;display:flex;height:100vh;align-items:center;justify-content:center}
@@ -184,8 +182,7 @@ input:focus{border-color:#1677ff}
 button{width:100%;padding:12px;background:#1677ff;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;transition:background .2s}
 button:hover{background:#4096ff}
 .error{color:#ff4d4f;margin-bottom:16px;font-size:14px}
-</style></head>
-<body>
+</style></head><body>
 <div class="card">
 <h1>🔐 File Sharing</h1>
 ${error ? '<div class="error">Incorrect password</div>' : ''}
@@ -193,20 +190,70 @@ ${error ? '<div class="error">Incorrect password</div>' : ''}
 <input type="password" name="password" placeholder="Enter access password" autofocus>
 <button type="submit">Sign In</button>
 </form>
+</div></body></html>`;
+}
+
+function renderChangePassword(isFirst, msg, error) {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Change Password</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;display:flex;height:100vh;align-items:center;justify-content:center}
+.card{background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 16px rgba(0,0,0,.08);width:400px;text-align:center}
+h1{font-size:22px;margin-bottom:8px;color:#333}
+p.desc{color:#666;font-size:14px;margin-bottom:24px}
+.notice{background:#fff7e6;border:1px solid #ffd591;color:#d46b08;padding:10px 16px;border-radius:8px;margin-bottom:20px;font-size:14px;text-align:left}
+input{width:100%;padding:12px 16px;border:1px solid #d9d9d9;border-radius:8px;font-size:16px;outline:none;margin-bottom:14px;transition:border-color .2s}
+input:focus{border-color:#1677ff}
+button{width:100%;padding:12px;background:#1677ff;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;transition:background .2s}
+button:hover{background:#4096ff}
+.error{color:#ff4d4f;margin-bottom:14px;font-size:14px}
+.success{color:#52c41a;margin-bottom:14px;font-size:14px}
+.back{display:inline-block;margin-top:16px;color:#999;font-size:13px;text-decoration:none}
+.back:hover{color:#1677ff}
+</style></head><body>
+<div class="card">
+<h1>🔑 Change Password</h1>
+${isFirst ? '<div class="notice">⚠️ You are currently using the default password. Please set a new password.</div>' : ''}
+<p class="desc">Enter your current password and a new password.</p>
+${error ? '<div class="error">' + escapeHtml(error) + '</div>' : ''}
+${msg ? '<div class="success">' + escapeHtml(msg) + '</div>' : ''}
+<form method="post">
+<input type="password" name="oldPassword" placeholder="Current password" autofocus>
+<input type="password" name="newPassword" placeholder="New password (min 4 characters)">
+<input type="password" name="confirmPassword" placeholder="Confirm new password">
+<button type="submit">Update Password</button>
+</form>
+<a class="back" href="/">← Back to files</a>
 </div>
-</body></html>`;
+<script>
+document.querySelector('form').addEventListener('submit', function(e) {
+  var newPwd = document.querySelectorAll('input[type=password]')[1].value;
+  var confirmPwd = document.querySelectorAll('input[type=password]')[2].value;
+  if (newPwd !== confirmPwd) {
+    e.preventDefault();
+    alert('Passwords do not match');
+  }
+});
+</script></body></html>`;
 }
 
 function renderIndex(files, msg) {
+  const isDefault = passwordStore.isDefault();
   return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>File Sharing</title>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>File Sharing</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;color:#333}
 .header{background:#fff;padding:16px 24px;border-bottom:1px solid #e8e8e8;display:flex;justify-content:space-between;align-items:center}
-.header h1{font-size:20px}.header a{color:#999;text-decoration:none;font-size:14px}.header a:hover{color:#1677ff}
+.header h1{font-size:20px}
+.header .actions{display:flex;align-items:center;gap:16px}
+.header .actions a{color:#999;text-decoration:none;font-size:14px}
+.header .actions a:hover{color:#1677ff}
 .container{max-width:800px;margin:24px auto;padding:0 16px}
+.default-banner{background:#fff7e6;border:1px solid #ffd591;color:#d46b08;padding:12px 20px;border-radius:8px;margin-bottom:16px;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.default-banner a{color:#1677ff;text-decoration:underline;font-size:13px}
+.default-banner a:hover{color:#4096ff}
 .upload-card{background:#fff;border-radius:12px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:24px;text-align:center}
 .upload-card .drop-zone{border:2px dashed #d9d9d9;border-radius:8px;padding:40px 20px;cursor:pointer;transition:all .2s;position:relative}
 .upload-card .drop-zone:hover{border-color:#1677ff;background:#f6f9ff}
@@ -229,19 +276,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .file-item .del button:hover{background:#fff1f0}
 .empty{padding:40px;text-align:center;color:#999}
 .msg{background:#f6ffed;border:1px solid #b7eb8f;color:#52c41a;padding:10px 20px;border-radius:8px;margin-bottom:16px;font-size:14px;display:${msg ? 'block' : 'none'}}
+.msg.error{background:#fff2f0;border-color:#ffccc7;color:#ff4d4f}
 .progress{display:none;margin-top:12px;align-items:center;gap:12px}
 .progress-track{flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden}
 .progress-bar{height:100%;background:linear-gradient(90deg,#1677ff,#4096ff);border-radius:3px;width:0%;transition:width .2s}
 .progress-text{font-size:13px;color:#666;min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
 .file-icon{margin-right:10px;font-size:20px}
-</style></head>
-<body>
+</style></head><body>
 <div class="header">
 <h1>📁 File Sharing</h1>
+<div class="actions">
+<a href="/change-password">Change Password</a>
 <form method="post" action="/logout" style="display:inline"><a href="#" onclick="this.parentElement.submit();return false">Logout</a></form>
 </div>
+</div>
 <div class="container">
-${msg ? `<div class="msg">${escapeHtml(msg)}</div>` : ''}
+${isDefault ? '<div class="default-banner">⚠️ Currently using default password. <a href="/change-password?first=1">Change password →</a></div>' : ''}
+${msg ? `<div class="msg${msg.includes('failed') || msg.includes('error') ? ' error' : ''}">${escapeHtml(msg)}</div>` : ''}
 <div class="upload-card">
 <div class="drop-zone" id="dropZone">
 <div class="icon" id="dropIcon">📤</div>
@@ -281,12 +332,6 @@ const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
 let uploading = false;
 
-function formatSize(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / 1048576).toFixed(1) + ' MB';
-}
-
 function resetDropZone() {
   dropIcon.textContent = '📤';
   dropText.textContent = 'Drag files here, or ';
@@ -308,22 +353,14 @@ dropZone.addEventListener('click', e => {
   if (e.target === clickLink || clickLink.contains(e.target)) return;
   if (!uploading) fileInput.click();
 });
-
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
 dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('dragover');
+  e.preventDefault(); dropZone.classList.remove('dragover');
   if (uploading) return;
-  if (e.dataTransfer.files.length) {
-    fileInput.files = e.dataTransfer.files;
-    startUpload(e.dataTransfer.files[0]);
-  }
+  if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; startUpload(e.dataTransfer.files[0]); }
 });
-
-fileInput.addEventListener('change', () => {
-  if (fileInput.files.length) startUpload(fileInput.files[0]);
-});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) startUpload(fileInput.files[0]); });
 
 function startUpload(file) {
   uploading = true;
@@ -332,34 +369,24 @@ function startUpload(file) {
   fileInfo.style.display = 'block';
   fileInfo.textContent = formatSize(file.size);
   progressWrap.style.display = 'flex';
-
-  const formData = new FormData();
-  formData.append('file', file);
-
+  const formData = new FormData(); formData.append('file', file);
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/upload', true);
   xhr.setRequestHeader('Accept', 'application/json');
-
   xhr.upload.onprogress = function(e) {
-    if (e.lengthComputable) {
-      const pct = Math.round(e.loaded / e.total * 100);
-      progressBar.style.width = pct + '%';
-      progressText.textContent = pct + '%';
-    }
+    if (e.lengthComputable) { var pct = Math.round(e.loaded/e.total*100); progressBar.style.width=pct+'%'; progressText.textContent=pct+'%'; }
   };
-
   xhr.onload = function() {
     try {
-      const resp = JSON.parse(xhr.responseText);
+      var resp = JSON.parse(xhr.responseText);
       if (resp.ok) {
         dropIcon.textContent = '✅';
-        dropText.innerHTML = '<strong>' + escapeHtml(resp.name || file.name) + '</strong> uploaded successfully';
-        progressBar.style.width = '100%';
-        progressText.textContent = '100%';
-        setTimeout(() => { location.reload(); }, 1200);
+        dropText.innerHTML = '<strong>' + escapeHtml(resp.name||file.name) + '</strong> uploaded successfully';
+        progressBar.style.width = '100%'; progressText.textContent = '100%';
+        setTimeout(function(){ location.reload(); }, 1200);
       } else {
         dropIcon.textContent = '❌';
-        dropText.innerHTML = 'Upload failed: ' + escapeHtml(resp.msg || 'Unknown error');
+        dropText.innerHTML = 'Upload failed: ' + escapeHtml(resp.msg||'Unknown error');
         setTimeout(resetDropZone, 3000);
       }
     } catch(e) {
@@ -368,21 +395,16 @@ function startUpload(file) {
       setTimeout(resetDropZone, 3000);
     }
   };
-
   xhr.onerror = function() {
     dropIcon.textContent = '❌';
     dropText.innerHTML = 'Network error, upload failed';
     setTimeout(resetDropZone, 3000);
   };
-
   xhr.send(formData);
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-</script>
-</body></html>`;
+function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script></body></html>`;
 }
 
 // ── 工具函数 ──
@@ -397,10 +419,6 @@ function formatSize(bytes) {
 function formatTime(d) {
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function getFileIcon(name) {
@@ -419,7 +437,6 @@ function getFileIcon(name) {
   return icons[ext] || '📄';
 }
 
-// ── 启动 ──
 app.listen(PORT, '127.0.0.1', () => {
-  console.log(`FileShare server running on http://127.0.0.1:${PORT}`);
+  console.log('FileShare server running on http://127.0.0.1:' + PORT);
 });

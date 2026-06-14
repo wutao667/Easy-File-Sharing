@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const passwordStore = require('./password-store');
 
 const mcpSdkDir = path.resolve(__dirname, 'node_modules/@modelcontextprotocol/sdk/dist/cjs');
 const { McpServer } = require(path.join(mcpSdkDir, 'server/mcp.js'));
@@ -12,17 +13,17 @@ const z = require('zod');
 
 const PORT = Number(process.env.FILES_MCP_PORT || 3101);
 const HOST = process.env.FILES_MCP_HOST || '127.0.0.1';
-const API_KEY = process.env.FILES_MCP_API_KEY || process.env.FILE_PASSWORD || '123456';
 const UPLOAD_DIR = path.resolve(__dirname, '../uploads');
 const MAX_FILE_SIZE = Number(process.env.FILES_MCP_MAX_FILE_SIZE || 500 * 1024 * 1024);
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+passwordStore.init();
 
 function assertApiKey(req, res, next) {
   const bearer = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
   const provided = req.headers['x-api-key'] || bearer;
 
-  if (provided === API_KEY) return next();
+  if (provided && passwordStore.verify(provided)) return next();
 
   res.status(401).json({
     jsonrpc: '2.0',
@@ -267,12 +268,9 @@ const httpServer = app.listen(PORT, HOST, error => {
     process.exit(1);
   }
 
-  console.log(`Files MCP server listening on http://${HOST}:${PORT}`);
-  console.log('Endpoints: /mcp (Streamable HTTP), /sse + /messages (HTTP+SSE)');
 });
 
 async function shutdown() {
-  console.log('Shutting down files MCP server...');
   for (const id of Object.keys(transports)) {
     try {
       await transports[id].close();
