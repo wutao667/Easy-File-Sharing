@@ -100,21 +100,22 @@ curl -X POST http://localhost:3101/mcp \
 ## Project Structure
 ```
 .
-├── index.html
-├── screenshot.png
+├── index.html              # Static download landing page
+├── screenshot.png          # Dashboard UI screenshot
 ├── server/
-│   ├── package.json
-│   ├── package-lock.json
+│   ├── package.json            # Node.js dependencies and scripts
+│   ├── package-lock.json       # Locked dependency versions
 │   ├── server.js              # Express web server (port 3100)
 │   ├── files-mcp-server.js    # MCP server (port 3101)
 │   ├── password-store.js      # Shared bcrypt password module
 │   ├── password.json          # Password hash file (gitignored)
 │   ├── share-links.json       # Share link tokens (gitignored)
-│   └── files-mcp-server.service
+│   ├── .gitignore              # Ignores password.json, share-links.json
+│   └── files-mcp-server.service  # Systemd unit file for MCP server
 ├── skill/
 │   └── SKILL.md               # OpenClaw agent skill
 ├── uploads/                   # Uploaded files (gitignored)
-└── .gitignore
+└── .gitignore                  # Ignores node_modules/, uploads/, .env
 ```
 
 ## Tech Stack
