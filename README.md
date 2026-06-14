@@ -1,4 +1,4 @@
-# Easy File Shares — Simple File Sharing & MCP Server
+# Easy File Sharing — Simple File Sharing & MCP Server
 
 A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol) interface for AI agents.
 
@@ -27,14 +27,14 @@ A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol
 
 ### Install
 ```bash
-git clone https://github.com/wutao667/Easy-File-Shares.git
-cd Easy-File-Shares
+git clone https://github.com/wutao667/Easy-File-Sharing.git
+cd Easy-File-Sharing
 npm install
 ```
 
 ### Configure
 ```bash
-export FILE_PASSWORD="your-s…word"
+export FILE_PASSWORD="***"
 ```
 
 ### Run
