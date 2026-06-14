@@ -1,19 +1,27 @@
 # Easy File Sharing — Simple File Sharing & MCP Server
 
-A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol) interface for AI agents.
+A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol) interface for AI agents. Password stored as bcrypt hash, supports share links, change password, and default password detection.
 
 ## Features
 
 ### Web File Sharing
 - Password-protected upload/download/delete
-- Drag-and-drop file upload with progress bar
-- 500MB per-file limit
-- Session-based authentication
+- **Share links** — click 🔗 to generate a unique public download URL for each file, no login required
+- **Change password** UI — update your password from the web interface at any time
+- **Default password detection** — first-run auto-creates `password.json` with default password `123456`, shows a banner and redirects to change password
+- Drag-and-drop file upload with progress bar, 500MB per-file limit
+- Session-based authentication (24h expiry)
+- Mobile-responsive layout
+
+### Password Store
+- Password stored as bcrypt hash in `server/password.json`
+- Web UI and MCP server share the same password file
+- Modify password once, both update automatically
 
 ### MCP Server (for AI Agents)
 - **5 MCP tools**: list_files, upload_file, download_file, delete_file, get_file_info
 - Streamable HTTP + SSE transport modes
-- API key authentication
+- Uses the same password as the web UI
 
 ## Screenshot
 
@@ -32,21 +40,36 @@ cd Easy-File-Sharing
 npm install
 ```
 
-### Configure
-```bash
-export FILE_PASSWORD="***"
-```
-
 ### Run
 ```bash
 npm start          # Web UI on port 3100
 npm run start:mcp  # MCP server on port 3101
 ```
 
+> ⚠️ No configuration needed. First run auto-creates `server/password.json` with default password `123456`. Change it from the web UI.
+
 ## Web UI
+
 Open `http://localhost:3100` — login with password, then drag & drop to upload.
 
+### Share Links
+Each file in the list has a 🔗 button. Click it to generate a unique share URL and copy it to clipboard. Anyone with this URL can download the file without logging in.
+
+```
+https://files.huaguo.site/s/a1b2c3d4e5f6...
+```
+
+### Change Password
+Click "Change Password" in the header. Enter your old password and a new one (min 4 characters). The same password is used for both the web UI and MCP access.
+
 ## MCP API
+
+### Authentication
+Use the same password as the web UI as the API key:
+
+```bash
+x-api-key: <your-password>
+```
 
 ### Streamable HTTP
 ```bash
@@ -54,14 +77,14 @@ Open `http://localhost:3100` — login with password, then drag & drop to upload
 curl -X POST http://localhost:3101/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "x-api-key: ***" \
+  -H "x-api-key: <password>" \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"agent","version":"1.0"}},"id":1}'
 
 # List files (use session-id from initialize)
 curl -X POST http://localhost:3101/mcp \
   -H "Content-Type: application/json" \
   -H "mcp-session-id: <session-id>" \
-  -H "x-api-key: ***" \
+  -H "x-api-key: <password>" \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_files","arguments":{}},"id":2}'
 ```
 
@@ -83,6 +106,9 @@ curl -X POST http://localhost:3101/mcp \
 │   ├── package.json
 │   ├── server.js              # Express web server (port 3100)
 │   ├── files-mcp-server.js    # MCP server (port 3101)
+│   ├── password-store.js      # Shared bcrypt password module
+│   ├── password.json          # Password hash file (gitignored)
+│   ├── share-links.json       # Share link tokens (gitignored)
 │   └── files-mcp-server.service
 ├── skill/
 │   └── SKILL.md               # OpenClaw agent skill
