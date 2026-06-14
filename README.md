@@ -1,4 +1,4 @@
-# Files.huaguo.site — Simple File Sharing & MCP Server
+# Easy File Shares — Simple File Sharing & MCP Server
 
 A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol) interface for AI agents.
 
@@ -27,8 +27,8 @@ A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol
 
 ### Install
 ```bash
-git clone https://github.com/wutao667/files-huaguo-site.git
-cd files-huaguo-site
+git clone https://github.com/wutao667/Easy-File-Shares.git
+cd Easy-File-Shares
 npm install
 ```
 
