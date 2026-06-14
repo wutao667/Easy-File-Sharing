@@ -1,6 +1,6 @@
 # Easy File Sharing — Simple File Sharing & MCP Server
 
-A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol) interface for AI agents. Password stored as bcrypt hash, supports share links, change password, and default password detection.
+Easy File Sharing is a password-protected file sharing server with both a web UI and an MCP (Model Context Protocol) interface for AI agents.
 
 ## Features
 
@@ -8,7 +8,7 @@ A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol
 - Password-protected upload/download/delete
 - **Share links** — click 🔗 to generate a unique public download URL for each file, no login required
 - **Change password** UI — update your password from the web interface at any time
-- **Default password detection** — first-run auto-creates `password.json` with default password `123456`, shows a banner and redirects to change password
+- **Default password detection** — first-run auto-creates `server/password.json` with default password `123456`, shows a banner and redirects to change password
 - Drag-and-drop file upload with progress bar, 500MB per-file limit
 - Session-based authentication (24h expiry)
 - Mobile-responsive layout
@@ -36,7 +36,7 @@ A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol
 ### Install
 ```bash
 git clone https://github.com/wutao667/Easy-File-Sharing.git
-cd Easy-File-Sharing
+cd Easy-File-Sharing/server
 npm install
 ```
 
@@ -46,7 +46,7 @@ npm start          # Web UI on port 3100
 npm run start:mcp  # MCP server on port 3101
 ```
 
-> ⚠️ No configuration needed. First run auto-creates `server/password.json` with default password `123456`. Change it from the web UI.
+> No configuration needed. First run auto-creates `server/password.json` with default password `123456`. Change it from the web UI.
 
 ## Web UI
 
@@ -65,7 +65,7 @@ Click "Change Password" in the header. Enter your old password and a new one (mi
 ## MCP API
 
 ### Authentication
-Use the same password as the web UI as the API key:
+Use the current web UI password as the MCP API key:
 
 ```bash
 x-api-key: <your-password>
@@ -104,6 +104,7 @@ curl -X POST http://localhost:3101/mcp \
 ├── screenshot.png
 ├── server/
 │   ├── package.json
+│   ├── package-lock.json
 │   ├── server.js              # Express web server (port 3100)
 │   ├── files-mcp-server.js    # MCP server (port 3101)
 │   ├── password-store.js      # Shared bcrypt password module
