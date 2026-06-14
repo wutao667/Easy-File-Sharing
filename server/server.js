@@ -120,11 +120,11 @@ app.post('/upload', (req, res, next) => {
       if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
           if (req.xhr || req.headers.accept?.includes('json')) {
-            return res.json({ ok: false, msg: '文件太大，最大 500MB' });
+            return res.json({ ok: false, msg: 'File too large, max 500MB' });
           }
-          return res.redirect('/?msg=文件太大，最大 500MB');
+          return res.redirect('/?msg=File too large, max 500MB');
         }
-        const msg = '上传出错: ' + err.message;
+        const msg = 'Upload error: ' + err.message;
         if (req.xhr || req.headers.accept?.includes('json')) {
           return res.json({ ok: false, msg });
         }
@@ -134,14 +134,14 @@ app.post('/upload', (req, res, next) => {
     }
     if (!req.file) {
       if (req.xhr || req.headers.accept?.includes('json')) {
-        return res.json({ ok: false, msg: '请选择文件' });
+        return res.json({ ok: false, msg: 'Please select a file' });
       }
-      return res.redirect('/?msg=请选择文件');
+      return res.redirect('/?msg=Please select a file');
     }
     if (req.xhr || req.headers.accept?.includes('json')) {
-      return res.json({ ok: true, msg: '上传成功', name: req.file.originalname });
+      return res.json({ ok: true, msg: 'Upload successful', name: req.file.originalname });
     }
-    res.redirect('/?msg=上传成功');
+    res.redirect('/?msg=Upload successful');
   });
 });
 
@@ -153,9 +153,9 @@ app.post('/delete/:name', (req, res) => {
   if (!fp.startsWith(UPLOAD_DIR)) return res.status(403).end();
   try {
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
-    res.redirect('/?msg=已删除');
+    res.redirect('/?msg=Deleted');
   } catch (e) {
-    res.redirect('/?msg=删除失败');
+    res.redirect('/?msg=Delete failed');
   }
 });
 
@@ -164,7 +164,7 @@ app.get('/d/:name', (req, res) => {
   const name = decodeURIComponent(req.params.name);
   const fp = path.join(UPLOAD_DIR, name);
   if (!fp.startsWith(UPLOAD_DIR)) return res.status(403).end();
-  if (!fs.existsSync(fp)) return res.status(404).send('文件不存在');
+  if (!fs.existsSync(fp)) return res.status(404).send('File not found');
   res.download(fp, name);
 });
 
@@ -172,8 +172,8 @@ app.get('/d/:name', (req, res) => {
 
 function renderLogin(error) {
   return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>文件分享 · 登录</title>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>File Sharing · Login</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;display:flex;height:100vh;align-items:center;justify-content:center}
@@ -187,11 +187,11 @@ button:hover{background:#4096ff}
 </style></head>
 <body>
 <div class="card">
-<h1>🔐 文件分享</h1>
-${error ? '<div class="error">密码错误</div>' : ''}
+<h1>🔐 File Sharing</h1>
+${error ? '<div class="error">Incorrect password</div>' : ''}
 <form method="post">
-<input type="password" name="password" placeholder="请输入访问密码" autofocus>
-<button type="submit">进入</button>
+<input type="password" name="password" placeholder="Enter access password" autofocus>
+<button type="submit">Sign In</button>
 </form>
 </div>
 </body></html>`;
@@ -199,8 +199,8 @@ ${error ? '<div class="error">密码错误</div>' : ''}
 
 function renderIndex(files, msg) {
   return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>文件分享</title>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>File Sharing</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;color:#333}
@@ -237,15 +237,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 </style></head>
 <body>
 <div class="header">
-<h1>📁 文件分享</h1>
-<form method="post" action="/logout" style="display:inline"><a href="#" onclick="this.parentElement.submit();return false">退出</a></form>
+<h1>📁 File Sharing</h1>
+<form method="post" action="/logout" style="display:inline"><a href="#" onclick="this.parentElement.submit();return false">Logout</a></form>
 </div>
 <div class="container">
 ${msg ? `<div class="msg">${escapeHtml(msg)}</div>` : ''}
 <div class="upload-card">
 <div class="drop-zone" id="dropZone">
 <div class="icon" id="dropIcon">📤</div>
-<p id="dropText">拖拽文件到此处，或 <a href="#" id="clickLink" style="color:#1677ff">点击选择文件</a></p>
+<p id="dropText">Drag files here, or <a href="#" id="clickLink" style="color:#1677ff">choose file</a></p>
 <div id="fileInfo" style="display:none;color:#999;font-size:13px;margin-top:8px"></div>
 <div class="progress" id="progressWrap">
 <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
@@ -255,14 +255,14 @@ ${msg ? `<div class="msg">${escapeHtml(msg)}</div>` : ''}
 <input type="file" name="file" id="fileInput" style="display:none">
 </div>
 <div class="file-list">
-${files.length === 0 ? '<div class="empty">暂无文件</div>' : files.map(f => `
+${files.length === 0 ? '<div class="empty">No files yet</div>' : files.map(f => `
 <div class="file-item">
 <span class="file-icon">${getFileIcon(f.name)}</span>
 <span class="name"><a href="/d/${encodeURIComponent(f.name)}" download>${escapeHtml(f.name)}</a></span>
 <span class="meta">${f.sizeStr}</span>
 <span class="meta">${f.mtimeStr}</span>
 <span class="del">
-<form method="post" action="/delete/${encodeURIComponent(f.name)}" onsubmit="return confirm('确定删除 ${escapeHtml(f.name)}？')">
+<form method="post" action="/delete/${encodeURIComponent(f.name)}" onsubmit="return confirm('Delete ${escapeHtml(f.name)}?')">
 <button type="submit">🗑</button>
 </form>
 </span>
@@ -289,11 +289,11 @@ function formatSize(bytes) {
 
 function resetDropZone() {
   dropIcon.textContent = '📤';
-  dropText.textContent = '拖拽文件到此处，或 ';
+  dropText.textContent = 'Drag files here, or ';
   const link = document.createElement('a');
   link.href = '#';
   link.style.cssText = 'color:#1677ff';
-  link.textContent = '点击选择文件';
+  link.textContent = 'choose file';
   link.addEventListener('click', e => { e.preventDefault(); fileInput.click(); });
   dropText.appendChild(link);
   fileInfo.style.display = 'none';
@@ -328,7 +328,7 @@ fileInput.addEventListener('change', () => {
 function startUpload(file) {
   uploading = true;
   dropIcon.textContent = '⏳';
-  dropText.innerHTML = '正在上传 <strong>' + escapeHtml(file.name) + '</strong>';
+  dropText.innerHTML = 'Uploading <strong>' + escapeHtml(file.name) + '</strong>';
   fileInfo.style.display = 'block';
   fileInfo.textContent = formatSize(file.size);
   progressWrap.style.display = 'flex';
@@ -353,25 +353,25 @@ function startUpload(file) {
       const resp = JSON.parse(xhr.responseText);
       if (resp.ok) {
         dropIcon.textContent = '✅';
-        dropText.innerHTML = '<strong>' + escapeHtml(resp.name || file.name) + '</strong> 上传成功';
+        dropText.innerHTML = '<strong>' + escapeHtml(resp.name || file.name) + '</strong> uploaded successfully';
         progressBar.style.width = '100%';
         progressText.textContent = '100%';
         setTimeout(() => { location.reload(); }, 1200);
       } else {
         dropIcon.textContent = '❌';
-        dropText.innerHTML = '上传失败: ' + escapeHtml(resp.msg || '未知错误');
+        dropText.innerHTML = 'Upload failed: ' + escapeHtml(resp.msg || 'Unknown error');
         setTimeout(resetDropZone, 3000);
       }
     } catch(e) {
       dropIcon.textContent = '❌';
-      dropText.innerHTML = '上传失败，请重试';
+      dropText.innerHTML = 'Upload failed, please try again';
       setTimeout(resetDropZone, 3000);
     }
   };
 
   xhr.onerror = function() {
     dropIcon.textContent = '❌';
-    dropText.innerHTML = '网络错误，上传失败';
+    dropText.innerHTML = 'Network error, upload failed';
     setTimeout(resetDropZone, 3000);
   };
 
