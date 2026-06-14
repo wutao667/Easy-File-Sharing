@@ -6,20 +6,21 @@ const path = require('path');
 const crypto = require('crypto');
 const passwordStore = require('./password-store');
 
-// ── 配置 ──
+// ── 配置：端口、上传目录、分享链接存储、上传限制与会话密钥 ──
 const PORT = 3100;
 const UPLOAD_DIR = path.resolve(__dirname, '../uploads');
 const SHARE_LINKS_FILE = path.resolve(__dirname, 'share-links.json');
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
 
+// 初始化运行所需目录和密码存储，保证服务启动时基础文件可用。
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 passwordStore.init();
 
-// ── Express ──
+// ── Express 应用：创建 HTTP 应用实例并挂载基础解析能力 ──
 const app = express();
 
-// Session
+// ── Session：使用内存会话记录登录状态，Cookie 有效期为 24 小时 ──
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
@@ -30,17 +31,21 @@ app.use(session({
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// ── 文件名编码修复 ──
+// ── 工具函数：文件名编码、上传路径校验、分享链接读写 ──
+
+// 修复部分浏览器/表单上传时中文文件名被按 latin1 读取的问题。
 function fixEncoding(name) {
   return Buffer.from(name, 'latin1').toString('utf8');
 }
 
+// 将用户传入的文件名限制在上传目录内，避免目录穿越访问。
 function getUploadPath(name) {
   const fp = path.resolve(UPLOAD_DIR, name);
   if (fp !== UPLOAD_DIR && fp.startsWith(UPLOAD_DIR + path.sep)) return fp;
   return null;
 }
 
+// 从本地 JSON 文件读取分享链接映射；读取失败时返回空对象以不中断页面。
 function loadShareLinks() {
   try {
     if (!fs.existsSync(SHARE_LINKS_FILE)) return {};
@@ -50,15 +55,17 @@ function loadShareLinks() {
   }
 }
 
+// 将分享链接映射持久化到本地文件。
 function saveShareLinks(links) {
   fs.writeFileSync(SHARE_LINKS_FILE, JSON.stringify(links, null, 2));
 }
 
+// 根据分享 token 拼出对外访问 URL。
 function getShareUrl(token) {
   return 'https://files.huaguo.site/s/' + token;
 }
 
-// ── Multer ──
+// ── 上传配置：Multer 存储位置、重名处理与文件大小限制 ──
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
@@ -75,7 +82,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: MAX_FILE_SIZE } });
 
-// ── 中间件：登录检查 ──
+// ── 鉴权中间件：保护后台页面和文件管理接口，放行登录与公开分享 ──
 function requireAuth(req, res, next) {
   if (req.session.loggedIn) return next();
   if (req.path === '/login' || req.path.startsWith('/s/') || req.path === '/change-password' && req.method === 'POST') return next();
@@ -85,7 +92,7 @@ app.use(requireAuth);
 
 // ── 页面路由 ──
 
-// 登录页
+// ── 登录路由：展示登录页，并在密码正确后写入 session ──
 app.get('/login', (req, res) => {
   if (req.session.loggedIn) return res.redirect('/');
   res.send(renderLogin(req.query.error, passwordStore.isDefault()));
@@ -103,12 +110,12 @@ app.post('/login', (req, res) => {
   }
 });
 
-// 退出
+// ── 退出路由：销毁当前 session 后回到登录页 ──
 app.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
-// 首页
+// ── 首页路由：读取上传目录，按修改时间倒序渲染文件列表 ──
 app.get('/', (req, res) => {
   let files = [];
   try {
@@ -125,7 +132,7 @@ app.get('/', (req, res) => {
   res.send(renderIndex(files, req.query.msg));
 });
 
-// 修改密码
+// ── 修改密码路由：首次登录或手动进入时更新访问密码 ──
 app.get('/change-password', (req, res) => {
   if (!req.session.loggedIn) return res.redirect('/login');
   res.send(renderChangePassword(req.query.first !== undefined, req.query.msg, req.query.error));
@@ -141,7 +148,7 @@ app.post('/change-password', (req, res) => {
   res.redirect('/change-password?error=' + encodeURIComponent(result.msg));
 });
 
-// 上传
+// ── 上传路由：接收单文件上传，并针对普通表单与 AJAX 返回不同响应 ──
 app.post('/upload', (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err) {
@@ -169,7 +176,7 @@ app.post('/upload', (req, res, next) => {
   });
 });
 
-// 删除
+// ── 删除路由：删除指定上传文件，路径会先经过安全校验 ──
 app.post('/delete/:name', (req, res) => {
   const name = decodeURIComponent(req.params.name);
   const fp = getUploadPath(name);
@@ -182,7 +189,7 @@ app.post('/delete/:name', (req, res) => {
   }
 });
 
-// 下载
+// ── 下载路由：登录用户下载指定文件 ──
 app.get('/d/:name', (req, res) => {
   const name = decodeURIComponent(req.params.name);
   const fp = getUploadPath(name);
@@ -191,7 +198,7 @@ app.get('/d/:name', (req, res) => {
   res.download(fp, name);
 });
 
-// 公开分享下载
+// ── 公开分享下载路由：通过 token 查找文件，无需登录即可下载 ──
 app.get('/s/:token', (req, res) => {
   const links = loadShareLinks();
   const name = links[req.params.token];
@@ -201,7 +208,7 @@ app.get('/s/:token', (req, res) => {
   res.download(fp, name);
 });
 
-// 创建分享链接
+// ── API 路由：为文件创建或复用公开分享链接 ──
 app.post('/api/share/:name', (req, res) => {
   const name = decodeURIComponent(req.params.name);
   const fp = getUploadPath(name);
@@ -222,8 +229,9 @@ app.post('/api/share/:name', (req, res) => {
   res.json({ ok: true, url: getShareUrl(token) });
 });
 
-// ── 模板 ──
+// ── 模板函数：直接返回登录页、改密页和文件列表页的 HTML ──
 
+// 渲染登录页面；默认密码状态会显示改密提醒。
 function renderLogin(error, isDefault) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>File Sharing · Login</title>
@@ -250,6 +258,7 @@ ${isDefault ? '<div class="notice">Default password is 123456. You will be redir
 </div></body></html>`;
 }
 
+// 渲染修改密码页面；前端只做确认密码一致性校验，后端仍负责真正更新。
 function renderChangePassword(isFirst, msg, error) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Change Password</title>
@@ -295,6 +304,7 @@ document.querySelector('form').addEventListener('submit', function(e) {
 </script></body></html>`;
 }
 
+// 渲染文件管理首页，包含拖拽上传、文件列表、删除和分享按钮。
 function renderIndex(files, msg) {
   const isDefault = passwordStore.isDefault();
   return `<!DOCTYPE html>
@@ -501,8 +511,10 @@ document.querySelectorAll('.share-btn').forEach(btn => {
 
 // ── 工具函数 ──
 
+// 转义 HTML 特殊字符，避免文件名或消息内容破坏页面结构。
 function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+// 将字节数格式化为适合页面展示的单位。
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -510,11 +522,13 @@ function formatSize(bytes) {
   return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
 }
 
+// 将文件修改时间格式化为本地日期时间字符串。
 function formatTime(d) {
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// 根据扩展名选择页面上展示的文件类型图标。
 function getFileIcon(name) {
   const ext = path.extname(name).toLowerCase();
   const icons = {
@@ -531,6 +545,7 @@ function getFileIcon(name) {
   return icons[ext] || '📄';
 }
 
+// ── 服务启动：仅监听本机地址，由外层反向代理负责对外暴露 ──
 app.listen(PORT, '127.0.0.1', () => {
   console.log('FileShare server running on http://127.0.0.1:' + PORT);
 });
