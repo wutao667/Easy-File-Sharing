@@ -9,6 +9,7 @@ const passwordStore = require('./password-store');
 // ── 配置 ──
 const PORT = 3100;
 const UPLOAD_DIR = path.resolve(__dirname, '../uploads');
+const SHARE_LINKS_FILE = path.resolve(__dirname, 'share-links.json');
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
 
@@ -34,6 +35,29 @@ function fixEncoding(name) {
   return Buffer.from(name, 'latin1').toString('utf8');
 }
 
+function getUploadPath(name) {
+  const fp = path.resolve(UPLOAD_DIR, name);
+  if (fp !== UPLOAD_DIR && fp.startsWith(UPLOAD_DIR + path.sep)) return fp;
+  return null;
+}
+
+function loadShareLinks() {
+  try {
+    if (!fs.existsSync(SHARE_LINKS_FILE)) return {};
+    return JSON.parse(fs.readFileSync(SHARE_LINKS_FILE, 'utf8'));
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveShareLinks(links) {
+  fs.writeFileSync(SHARE_LINKS_FILE, JSON.stringify(links, null, 2));
+}
+
+function getShareUrl(token) {
+  return 'https://files.huaguo.site/s/' + token;
+}
+
 // ── Multer ──
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
@@ -54,7 +78,7 @@ const upload = multer({ storage, limits: { fileSize: MAX_FILE_SIZE } });
 // ── 中间件：登录检查 ──
 function requireAuth(req, res, next) {
   if (req.session.loggedIn) return next();
-  if (req.path === '/login' || req.path === '/change-password' && req.method === 'POST') return next();
+  if (req.path === '/login' || req.path.startsWith('/s/') || req.path === '/change-password' && req.method === 'POST') return next();
   res.redirect('/login');
 }
 app.use(requireAuth);
@@ -148,8 +172,8 @@ app.post('/upload', (req, res, next) => {
 // 删除
 app.post('/delete/:name', (req, res) => {
   const name = decodeURIComponent(req.params.name);
-  const fp = path.join(UPLOAD_DIR, name);
-  if (!fp.startsWith(UPLOAD_DIR)) return res.status(403).end();
+  const fp = getUploadPath(name);
+  if (!fp) return res.status(403).end();
   try {
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
     res.redirect('/?msg=Deleted');
@@ -161,10 +185,41 @@ app.post('/delete/:name', (req, res) => {
 // 下载
 app.get('/d/:name', (req, res) => {
   const name = decodeURIComponent(req.params.name);
-  const fp = path.join(UPLOAD_DIR, name);
-  if (!fp.startsWith(UPLOAD_DIR)) return res.status(403).end();
+  const fp = getUploadPath(name);
+  if (!fp) return res.status(403).end();
   if (!fs.existsSync(fp)) return res.status(404).send('File not found');
   res.download(fp, name);
+});
+
+// 公开分享下载
+app.get('/s/:token', (req, res) => {
+  const links = loadShareLinks();
+  const name = links[req.params.token];
+  if (!name) return res.status(404).send('Share link not found');
+  const fp = getUploadPath(name);
+  if (!fp || !fs.existsSync(fp)) return res.status(404).send('File not found');
+  res.download(fp, name);
+});
+
+// 创建分享链接
+app.post('/api/share/:name', (req, res) => {
+  const name = decodeURIComponent(req.params.name);
+  const fp = getUploadPath(name);
+  if (!fp) return res.status(403).json({ ok: false, msg: 'Invalid file name' });
+  if (!fs.existsSync(fp)) return res.status(404).json({ ok: false, msg: 'File not found' });
+
+  const links = loadShareLinks();
+  const existing = Object.entries(links).find(([, fileName]) => fileName === name);
+  if (existing) return res.json({ ok: true, url: getShareUrl(existing[0]) });
+
+  let token;
+  do {
+    token = crypto.randomBytes(16).toString('hex');
+  } while (links[token]);
+
+  links[token] = name;
+  saveShareLinks(links);
+  res.json({ ok: true, url: getShareUrl(token) });
 });
 
 // ── 模板 ──
@@ -276,6 +331,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .file-item .del form{display:inline}
 .file-item .del button{background:none;border:none;color:#ff4d4f;cursor:pointer;font-size:13px;padding:4px 8px;border-radius:4px}
 .file-item .del button:hover{background:#fff1f0}
+.file-item .share button{background:none;border:none;color:#52c41a;cursor:pointer;font-size:16px;padding:4px 8px;border-radius:4px}
+.file-item .share button:hover{background:#f6ffed}
 .empty{padding:40px;text-align:center;color:#999}
 .msg{background:#f6ffed;border:1px solid #b7eb8f;color:#52c41a;padding:10px 20px;border-radius:8px;margin-bottom:16px;font-size:14px;display:${msg ? 'block' : 'none'}}
 .msg.error{background:#fff2f0;border-color:#ffccc7;color:#ff4d4f}
@@ -296,8 +353,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
   .file-icon{margin-right:0}
   .file-item .name{width:100%;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;font-size:15px}
   .file-item .meta{margin:0;white-space:normal;font-size:12px}
-  .file-item .del{align-self:flex-end}
-  .file-item .del button{padding:6px 10px}
+  .file-item .del,.file-item .share{align-self:flex-end}
+  .file-item .del button,.file-item .share button{padding:6px 10px}
 }
 </style></head><body>
 <div class="header">
@@ -333,6 +390,9 @@ ${files.length === 0 ? '<div class="empty">No files yet</div>' : files.map(f => 
 <form method="post" action="/delete/${encodeURIComponent(f.name)}" onsubmit="return confirm('Delete ${escapeHtml(f.name)}?')">
 <button type="submit">🗑</button>
 </form>
+</span>
+<span class="share">
+<button class="share-btn" data-file="${escapeHtml(f.name)}" title="Copy share link">🔗</button>
 </span>
 </div>`).join('')}
 </div>
@@ -419,6 +479,22 @@ function startUpload(file) {
   };
   xhr.send(formData);
 }
+
+document.querySelectorAll('.share-btn').forEach(btn => {
+  btn.addEventListener('click', async function() {
+    const name = this.dataset.file;
+    try {
+      const resp = await fetch('/api/share/' + encodeURIComponent(name), { method: 'POST' });
+      const data = await resp.json();
+      if (data.ok) {
+        await navigator.clipboard.writeText(data.url);
+        const orig = this.textContent;
+        this.textContent = '✅';
+        setTimeout(() => { this.textContent = orig; }, 2000);
+      }
+    } catch(e) { /* ignore */ }
+  });
+});
 
 </script></body></html>`;
 }
