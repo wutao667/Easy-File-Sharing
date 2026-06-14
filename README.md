@@ -15,6 +15,10 @@ A dual-mode file sharing server with a web UI and an MCP (Model Context Protocol
 - Streamable HTTP + SSE transport modes
 - API key authentication
 
+## Screenshot
+
+![File sharing dashboard](screenshot.png)
+
 ## Quick Start
 
 ### Prerequisites
@@ -30,7 +34,7 @@ npm install
 
 ### Configure
 ```bash
-export FILE_PASSWORD="your-secure-password"
+export FILE_PASSWORD="your-s…word"
 ```
 
 ### Run
@@ -50,14 +54,14 @@ Open `http://localhost:3100` — login with password, then drag & drop to upload
 curl -X POST http://localhost:3101/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "x-api-key: your-password" \
+  -H "x-api-key: ***" \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"agent","version":"1.0"}},"id":1}'
 
 # List files (use session-id from initialize)
 curl -X POST http://localhost:3101/mcp \
   -H "Content-Type: application/json" \
   -H "mcp-session-id: <session-id>" \
-  -H "x-api-key: your-password" \
+  -H "x-api-key: ***" \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_files","arguments":{}},"id":2}'
 ```
 
@@ -74,6 +78,7 @@ curl -X POST http://localhost:3101/mcp \
 ```
 .
 ├── index.html
+├── screenshot.png
 ├── server/
 │   ├── package.json
 │   ├── server.js              # Express web server (port 3100)
