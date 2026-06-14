@@ -64,7 +64,7 @@ app.use(requireAuth);
 // 登录页
 app.get('/login', (req, res) => {
   if (req.session.loggedIn) return res.redirect('/');
-  res.send(renderLogin(req.query.error));
+  res.send(renderLogin(req.query.error, passwordStore.isDefault()));
 });
 
 app.post('/login', (req, res) => {
@@ -169,7 +169,7 @@ app.get('/d/:name', (req, res) => {
 
 // ── 模板 ──
 
-function renderLogin(error) {
+function renderLogin(error, isDefault) {
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>File Sharing · Login</title>
 <style>
@@ -182,12 +182,14 @@ input:focus{border-color:#1677ff}
 button{width:100%;padding:12px;background:#1677ff;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;transition:background .2s}
 button:hover{background:#4096ff}
 .error{color:#ff4d4f;margin-bottom:16px;font-size:14px}
+.notice{background:#fff7e6;border:1px solid #ffd591;color:#d46b08;padding:10px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;text-align:left}
 </style></head><body>
 <div class="card">
 <h1>🔐 File Sharing</h1>
 ${error ? '<div class="error">Incorrect password</div>' : ''}
+${isDefault ? '<div class="notice">Default password is 123456. You will be redirected to change your password after login.</div>' : ''}
 <form method="post">
-<input type="password" name="password" placeholder="Enter access password" autofocus>
+<input type="password" name="password" placeholder="Enter password (default: 123456)" autofocus>
 <button type="submit">Sign In</button>
 </form>
 </div></body></html>`;
@@ -403,11 +405,12 @@ function startUpload(file) {
   xhr.send(formData);
 }
 
-function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 </script></body></html>`;
 }
 
 // ── 工具函数 ──
+
+function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
