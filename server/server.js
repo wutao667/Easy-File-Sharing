@@ -269,7 +269,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .file-item{display:flex;align-items:center;padding:14px 20px;border-bottom:1px solid #f0f0f0;transition:background .15s}
 .file-item:last-child{border-bottom:none}
 .file-item:hover{background:#fafafa}
-.file-item .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-item .name{flex:1;overflow:hidden;text-overflow:ellipsis}
 .file-item .name a{color:#1677ff;text-decoration:none}
 .file-item .name a:hover{text-decoration:underline}
 .file-item .meta{color:#999;font-size:13px;margin:0 16px;white-space:nowrap}
@@ -284,6 +284,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .progress-bar{height:100%;background:linear-gradient(90deg,#1677ff,#4096ff);border-radius:3px;width:0%;transition:width .2s}
 .progress-text{font-size:13px;color:#666;min-width:36px;text-align:right;font-variant-numeric:tabular-nums}
 .file-icon{margin-right:10px;font-size:20px}
+@media (max-width:600px){
+  .header{padding:12px 16px;align-items:flex-start;gap:10px}
+  .header h1{font-size:18px}
+  .header .actions{gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .container{margin:16px auto;padding:0 10px}
+  .default-banner{padding:10px 12px;align-items:flex-start;gap:8px;flex-direction:column}
+  .upload-card{padding:16px;margin-bottom:16px}
+  .upload-card .drop-zone{padding:28px 12px}
+  .file-item{align-items:flex-start;flex-direction:column;padding:14px 16px;gap:6px}
+  .file-icon{margin-right:0}
+  .file-item .name{width:100%;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;font-size:15px}
+  .file-item .meta{margin:0;white-space:normal;font-size:12px}
+  .file-item .del{align-self:flex-end}
+  .file-item .del button{padding:6px 10px}
+}
 </style></head><body>
 <div class="header">
 <h1>📁 File Sharing</h1>
