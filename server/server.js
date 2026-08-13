@@ -10,8 +10,11 @@ const passwordStore = require('./password-store');
 const PORT = 3100;
 const UPLOAD_DIR = path.resolve(__dirname, '../uploads');
 const SHARE_LINKS_FILE = path.resolve(__dirname, 'share-links.json');
+const SESSION_SECRET_FILE = path.resolve(__dirname, '.session-secret');
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
-const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+let SESSION_SECRET;
+try { SESSION_SECRET = fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim(); if (!SESSION_SECRET) throw new Error('Session secret file is empty'); }
+catch (err) { if (err.code !== 'ENOENT') throw err; SESSION_SECRET = crypto.randomBytes(32).toString('hex'); fs.writeFileSync(SESSION_SECRET_FILE, SESSION_SECRET, { mode: 0o600, flag: 'wx' }); }
 
 // 初始化运行所需目录和密码存储，保证服务启动时基础文件可用。
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -170,7 +173,7 @@ app.post('/upload', (req, res, next) => {
       return res.redirect('/?msg=' + encodeURIComponent(msg));
     }
     if (req.xhr || req.headers.accept?.includes('json')) {
-      return res.json({ ok: true, msg: 'Upload successful', name: req.file.originalname });
+      return res.json({ ok: true, msg: 'Upload successful', name: fixEncoding(req.file.originalname) });
     }
     res.redirect('/?msg=Upload successful');
   });
@@ -448,6 +451,9 @@ dropZone.addEventListener('drop', e => {
   if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; startUpload(e.dataTransfer.files[0]); }
 });
 fileInput.addEventListener('change', () => { if (fileInput.files.length) startUpload(fileInput.files[0]); });
+
+function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function formatSize(bytes) { if (bytes < 1024) return bytes + ' B'; if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB'; if (bytes < 1024*1024*1024) return (bytes/1024/1024).toFixed(1) + ' MB'; return (bytes/1024/1024/1024).toFixed(1) + ' GB'; }
 
 function startUpload(file) {
   uploading = true;

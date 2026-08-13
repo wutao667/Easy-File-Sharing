@@ -3,3 +3,6 @@ uploads/
 .env
 *.log
 npm-debug.log
+snake*.html
+webchat*.html
+*.apk
